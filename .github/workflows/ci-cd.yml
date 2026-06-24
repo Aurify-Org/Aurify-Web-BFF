@@ -1,0 +1,152 @@
+name: CI/CD Pipeline
+
+on:
+  push:
+    branches:
+      - main
+    tags:
+      - 'v[0-9][0-9][0-9][0-9].[0-9]+'
+  pull_request:
+    branches:
+      - main
+
+env:
+  REGISTRY: ghcr.io
+  PODMAN_SOCKET: unix:///run/user/1000/podman/podman.sock
+  REGISTRY_AUTH_FILE: /home/mifta/.config/containers/auth.json
+
+jobs:
+  # =============================================================
+  #  BUILD & PUSH IMAGE
+  # =============================================================
+  build:
+    runs-on: ubuntu-latest
+    if: startsWith(github.ref, 'refs/tags/v')
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Log in to the Container registry
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GHCR_TOKEN }}
+
+      - name: Extract tag name
+        run: echo "TAG_NAME=${GITHUB_REF#refs/tags/}" >> $GITHUB_ENV
+
+      - name: Lowercase repository name
+        run: echo "REPO_LOWERCASE=${GITHUB_REPOSITORY,,}" >> $GITHUB_ENV
+
+      - name: Build and push refina-bff image
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          push: true
+          tags: ${{ env.REGISTRY }}/${{ env.REPO_LOWERCASE }}/refina-bff:${{ env.TAG_NAME }}
+
+  # =============================================================
+  #  GITHUB RELEASE
+  # =============================================================
+  release:
+    needs: build
+    runs-on: ubuntu-latest
+    if: startsWith(github.ref, 'refs/tags/v')
+    permissions:
+      contents: write
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Create Release
+        uses: softprops/action-gh-release@v2
+        with:
+          generate_release_notes: true
+
+  # =============================================================
+  #  DEPLOY — STAGING
+  # =============================================================
+  deploy-staging:
+    needs: build
+    runs-on: ubuntu-latest
+    if: startsWith(github.ref, 'refs/tags/v')
+    environment: staging
+    permissions:
+      packages: read
+    steps:
+      - name: Connect to Tailscale
+        uses: tailscale/github-action@v3
+        with:
+          oauth-client-id: ${{ secrets.TAILSCALE_OAUTH_CLIENT_ID }}
+          oauth-secret: ${{ secrets.TAILSCALE_OAUTH_CLIENT_SECRET }}
+          tags: tag:ci
+
+      - name: Extract tag name
+        run: echo "TAG_NAME=${GITHUB_REF#refs/tags/}" >> $GITHUB_ENV
+
+      - name: Lowercase repository name
+        run: echo "REPO_LOWERCASE=${GITHUB_REPOSITORY,,}" >> $GITHUB_ENV
+
+      - name: Deploy to Staging Server
+        run: |
+          ssh -o StrictHostKeyChecking=no mifta@homeserver "
+            set -e
+            export DOCKER_HOST=${{ env.PODMAN_SOCKET }} &&
+            export REGISTRY_AUTH_FILE=${{ env.REGISTRY_AUTH_FILE }} &&
+            export STG_REFINA_BFF_IMAGE=${{ env.REGISTRY }}/${{ env.REPO_LOWERCASE }}/refina-bff &&
+            export STG_REFINA_BFF_IMAGE_TAG=${{ env.TAG_NAME }} &&
+
+            cd ~/web/staging/refinamicroservices &&
+
+            podman login -u ${{ github.actor }} -p ${{ secrets.GHCR_TOKEN }} ${{ env.REGISTRY }} &&
+            podman pull \$STG_REFINA_BFF_IMAGE:\$STG_REFINA_BFF_IMAGE_TAG &&
+            docker compose -f docker-compose.yml up -d stg-refina-bff &&
+
+            echo 'Deploy staging selesai: stg-refina-bff @ ${{ env.TAG_NAME }}'
+          "
+
+  # =============================================================
+  #  DEPLOY — PRODUCTION
+  # =============================================================
+  deploy-production:
+    needs: build
+    runs-on: ubuntu-latest
+    if: startsWith(github.ref, 'refs/tags/v')
+    environment: production
+    permissions:
+      packages: read
+    steps:
+      - name: Connect to Tailscale
+        uses: tailscale/github-action@v3
+        with:
+          oauth-client-id: ${{ secrets.TAILSCALE_OAUTH_CLIENT_ID }}
+          oauth-secret: ${{ secrets.TAILSCALE_OAUTH_CLIENT_SECRET }}
+          tags: tag:ci
+
+      - name: Extract tag name
+        run: echo "TAG_NAME=${GITHUB_REF#refs/tags/}" >> $GITHUB_ENV
+
+      - name: Lowercase repository name
+        run: echo "REPO_LOWERCASE=${GITHUB_REPOSITORY,,}" >> $GITHUB_ENV
+
+      - name: Deploy to Production Server
+        run: |
+          ssh -o StrictHostKeyChecking=no mifta@homeserver "
+            set -e
+            export DOCKER_HOST=${{ env.PODMAN_SOCKET }} &&
+            export REGISTRY_AUTH_FILE=${{ env.REGISTRY_AUTH_FILE }} &&
+            export PROD_REFINA_BFF_IMAGE=${{ env.REGISTRY }}/${{ env.REPO_LOWERCASE }}/refina-bff &&
+            export PROD_REFINA_BFF_IMAGE_TAG=${{ env.TAG_NAME }} &&
+
+            cd ~/web/production/refinamicroservices &&
+
+            podman login -u ${{ github.actor }} -p ${{ secrets.GHCR_TOKEN }} ${{ env.REGISTRY }} &&
+            podman pull \$PROD_REFINA_BFF_IMAGE:\$PROD_REFINA_BFF_IMAGE_TAG &&
+            docker compose -f docker-compose.yml up -d prod-refina-bff &&
+
+            echo 'Deploy production selesai: prod-refina-bff @ ${{ env.TAG_NAME }}'
+          "
