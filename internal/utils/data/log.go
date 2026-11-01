@@ -70,6 +70,8 @@ const (
 	LogGetTransactionByIDFailed = "get_transaction_by_id_failed"
 	LogCreateTransactionFailed  = "create_transaction_failed"
 	LogCreateFundTransferFailed = "create_fund_transfer_failed"
+	LogUpdateFundTransferFailed = "update_fund_transfer_failed"
+	LogDeleteFundTransferFailed = "delete_fund_transfer_failed"
 	LogUpdateTransactionFailed  = "update_transaction_failed"
 	LogDeleteTransactionFailed  = "delete_transaction_failed"
 	LogGetCategoriesFailed      = "get_categories_failed"

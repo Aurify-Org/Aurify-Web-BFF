@@ -98,6 +98,16 @@ type CreateFundTransferRequest struct {
 	Description       string  `json:"description,omitempty"`
 }
 
+// UpdateFundTransferRequest replaces a whole transfer: both legs move together.
+type UpdateFundTransferRequest struct {
+	FromWalletID    string  `json:"from_wallet_id" validate:"required"`
+	ToWalletID      string  `json:"to_wallet_id" validate:"required"`
+	Amount          float64 `json:"amount" validate:"required"`
+	AdminFee        float64 `json:"admin_fee"`
+	TransactionDate string  `json:"transaction_date" validate:"required"`
+	Description     string  `json:"description,omitempty"`
+}
+
 type UpdateTransactionRequest struct {
 	WalletID          string                      `json:"wallet_id,omitempty"`
 	CategoryID        string                      `json:"category_id,omitempty"`

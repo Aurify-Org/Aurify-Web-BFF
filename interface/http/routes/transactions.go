@@ -19,6 +19,8 @@ func TransactionRoutes(app *fiber.App, tc grpcClient.TransactionClient, wc grpcC
 	transactions.Get("/", h.GetUserTransactions)
 	transactions.Post("/", h.CreateTransaction)
 	transactions.Post("/transfer", h.CreateFundTransfer)
+	transactions.Put("/transfer/:transferId", h.UpdateFundTransfer)    // both legs at once
+	transactions.Delete("/transfer/:transferId", h.DeleteFundTransfer) // both legs at once
 	transactions.Get("/:id", h.GetTransactionByID)
 	transactions.Put("/:id", h.UpdateTransaction)
 	transactions.Delete("/:id", h.DeleteTransaction)

@@ -260,7 +260,7 @@ func (h *walletHandler) CreateWallet(c *fiber.Ctx) error {
 	}
 
 	// Invalidate wallet & dashboard caches
-	go h.invalidateWalletCaches(c.UserContext(), userData.ID)
+	h.invalidateWalletCaches(c.UserContext(), userData.ID)
 
 	return c.Status(fiber.StatusCreated).JSON(dto.APIResponse{
 		Status:     true,
@@ -364,8 +364,8 @@ func (h *walletHandler) UpdateWallet(c *fiber.Ctx) error {
 	}
 
 	// Invalidate wallet & dashboard caches
-	go h.invalidateWalletCaches(c.UserContext(), userData.ID)
-	go h.cache.Delete(c.UserContext(), cache.WalletByID(walletID))
+	h.invalidateWalletCaches(c.UserContext(), userData.ID)
+	_ = h.cache.Delete(c.UserContext(), cache.WalletByID(walletID))
 
 	return c.JSON(dto.APIResponse{
 		Status:     true,
@@ -408,8 +408,8 @@ func (h *walletHandler) DeleteWallet(c *fiber.Ctx) error {
 	}
 
 	// Invalidate wallet & dashboard caches
-	go h.invalidateWalletCaches(c.UserContext(), userData.ID)
-	go h.cache.Delete(c.UserContext(), cache.WalletByID(walletID))
+	h.invalidateWalletCaches(c.UserContext(), userData.ID)
+	_ = h.cache.Delete(c.UserContext(), cache.WalletByID(walletID))
 
 	return c.JSON(dto.APIResponse{
 		Status:     true,
@@ -468,8 +468,12 @@ func (h *walletHandler) GetWalletTypes(c *fiber.Ctx) error {
 func (h *walletHandler) invalidateWalletCaches(ctx context.Context, userID string) {
 	// Delete exact keys first
 	_ = h.cache.Delete(ctx, cache.DashboardWallets(userID), cache.DashboardNetWorth(userID))
-	// Then pattern-based for wallet:user:*
-	if err := h.cache.DeleteByPattern(ctx, cache.WalletAllPattern(userID)); err != nil {
-		logger.Warn(data.LogCacheInvalidateFail, map[string]any{"service": data.CacheService, "pattern": cache.WalletAllPattern(userID), "error": err.Error()})
+	// Then pattern-based. Transaction lists and budgets go too: a new wallet can
+	// bring an opening-balance transaction, and a deleted wallet's transactions
+	// drop out of every list.
+	for _, p := range []string{cache.WalletAllPattern(userID), cache.TransactionListPattern(userID), cache.BudgetAllPattern(userID)} {
+		if err := h.cache.DeleteByPattern(ctx, p); err != nil {
+			logger.Warn(data.LogCacheInvalidateFail, map[string]any{"service": data.CacheService, "pattern": p, "error": err.Error()})
+		}
 	}
 }

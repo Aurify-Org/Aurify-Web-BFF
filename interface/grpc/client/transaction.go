@@ -12,6 +12,8 @@ type TransactionClient interface {
 	GetTransactionByID(ctx context.Context, transactionID string) (*tpb.TransactionDetail, error)
 	CreateTransaction(ctx context.Context, req *tpb.CreateTransactionRequest) (*tpb.TransactionDetail, error)
 	CreateFundTransfer(ctx context.Context, req *tpb.CreateFundTransferRequest) (*tpb.FundTransferResponse, error)
+	UpdateFundTransfer(ctx context.Context, req *tpb.UpdateFundTransferRequest) (*tpb.FundTransferResponse, error)
+	DeleteFundTransfer(ctx context.Context, transferID string) (*tpb.FundTransferResponse, error)
 	UpdateTransaction(ctx context.Context, req *tpb.UpdateTransactionRequest) (*tpb.TransactionDetail, error)
 	DeleteTransaction(ctx context.Context, transactionID string) (*tpb.TransactionDetail, error)
 	GetCategories(ctx context.Context, categoryType string) (*tpb.GetCategoriesResponse, error)
@@ -52,6 +54,18 @@ func (t *transactionClientImpl) CreateTransaction(ctx context.Context, req *tpb.
 	ctx, cancel := context.WithTimeout(ctx, 15*time.Second)
 	defer cancel()
 	return t.client.CreateTransaction(ctx, req)
+}
+
+func (t *transactionClientImpl) UpdateFundTransfer(ctx context.Context, req *tpb.UpdateFundTransferRequest) (*tpb.FundTransferResponse, error) {
+	ctx, cancel := context.WithTimeout(ctx, 15*time.Second)
+	defer cancel()
+	return t.client.UpdateFundTransfer(ctx, req)
+}
+
+func (t *transactionClientImpl) DeleteFundTransfer(ctx context.Context, transferID string) (*tpb.FundTransferResponse, error) {
+	ctx, cancel := context.WithTimeout(ctx, 15*time.Second)
+	defer cancel()
+	return t.client.DeleteFundTransfer(ctx, &tpb.TransferID{Id: transferID})
 }
 
 func (t *transactionClientImpl) CreateFundTransfer(ctx context.Context, req *tpb.CreateFundTransferRequest) (*tpb.FundTransferResponse, error) {

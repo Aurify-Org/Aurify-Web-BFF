@@ -3,7 +3,7 @@ module refina-web-bff
 go 1.24.4
 
 require (
-	github.com/MuhammadMiftaa/Refina-Protobuf v1.17.0
+	github.com/MuhammadMiftaa/Refina-Protobuf v1.18.0
 	github.com/gofiber/fiber/v2 v2.52.6
 	github.com/golang-jwt/jwt/v5 v5.2.1
 	github.com/joho/godotenv v1.5.1

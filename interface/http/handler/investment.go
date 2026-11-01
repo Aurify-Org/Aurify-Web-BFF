@@ -223,7 +223,7 @@ func (h *investmentHandler) CreateInvestment(c *fiber.Ctx) error {
 	}
 
 	// Invalidate investment and dashboard caches
-	go h.invalidateInvestmentCaches(c.UserContext(), userData.ID)
+	h.invalidateInvestmentCaches(c.UserContext(), userData.ID)
 
 	return c.Status(fiber.StatusCreated).JSON(dto.APIResponse{
 		Status:     true,
@@ -274,7 +274,7 @@ func (h *investmentHandler) SellInvestment(c *fiber.Ctx) error {
 	}
 
 	// Invalidate investment and dashboard caches
-	go h.invalidateInvestmentCaches(c.UserContext(), userData.ID)
+	h.invalidateInvestmentCaches(c.UserContext(), userData.ID)
 
 	return c.JSON(dto.APIResponse{
 		Status:     true,

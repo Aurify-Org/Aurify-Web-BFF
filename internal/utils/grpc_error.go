@@ -53,6 +53,7 @@ var grpcCodeToHTTP = map[codes.Code]int{
 // More specific patterns should come first.
 var errorRules = []grpcErrorRule{
 	// ── Not Found errors ──
+	{pattern: "transfer not found", httpStatus: fiber.StatusNotFound, message: "Transfer not found"},
 	{pattern: "transaction not found", httpStatus: fiber.StatusNotFound, message: "Transaction not found"},
 	{pattern: "wallet not found", httpStatus: fiber.StatusNotFound, message: "Wallet not found"},
 	{pattern: "category not found", httpStatus: fiber.StatusNotFound, message: "Category not found"},
@@ -69,6 +70,10 @@ var errorRules = []grpcErrorRule{
 	{pattern: "insufficient wallet balance", httpStatus: fiber.StatusBadRequest, message: "Insufficient wallet balance"},
 	{pattern: "insufficient investment quantity", httpStatus: fiber.StatusBadRequest, message: "Insufficient investment quantity"},
 	{pattern: "insufficient", httpStatus: fiber.StatusBadRequest, message: "Insufficient balance"},
+
+	// ── Transfers ──
+	{pattern: "transfer leg cannot be edited on its own", httpStatus: fiber.StatusBadRequest, message: "A transfer is edited as a whole, not one side at a time"},
+	{pattern: "invalid transfer amount", httpStatus: fiber.StatusBadRequest, message: "Transfer amount must be greater than 0 and the admin fee cannot be negative"},
 
 	// ── Validation errors ──
 	{pattern: "invalid date format", httpStatus: fiber.StatusBadRequest, message: "Invalid date format"},

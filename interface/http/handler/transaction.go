@@ -267,7 +267,7 @@ func (h *transactionHandler) CreateTransaction(c *fiber.Ctx) error {
 	}
 
 	// Invalidate transaction, wallet, and dashboard caches
-	go h.invalidateTransactionCaches(c.UserContext(), userData.ID)
+	h.invalidateTransactionCaches(c.UserContext(), userData.ID)
 
 	return c.Status(fiber.StatusCreated).JSON(dto.APIResponse{
 		Status:     true,
@@ -299,6 +299,13 @@ func (h *transactionHandler) CreateFundTransfer(c *fiber.Ctx) error {
 		})
 	}
 
+	ctx := interceptor.ContextWithUserData(c.UserContext(), userData)
+
+	// Both wallets must be the caller's own, as for a single transaction.
+	if resp, ok := h.requireOwnWallets(c, ctx, userData.ID, requestID, req.FromWalletID, req.ToWalletID); !ok {
+		return resp
+	}
+
 	grpcReq := &tpb.CreateFundTransferRequest{
 		UserId:            userData.ID,
 		FromWalletId:      req.FromWalletID,
@@ -310,8 +317,6 @@ func (h *transactionHandler) CreateFundTransfer(c *fiber.Ctx) error {
 		TransactionDate:   req.TransactionDate,
 		Description:       req.Description,
 	}
-
-	ctx := interceptor.ContextWithUserData(c.UserContext(), userData)
 
 	result, err := h.transaction.CreateFundTransfer(ctx, grpcReq)
 	if err != nil {
@@ -330,8 +335,8 @@ func (h *transactionHandler) CreateFundTransfer(c *fiber.Ctx) error {
 	}
 
 	// Invalidate transaction, wallet, and dashboard caches (both wallets involved)
-	go h.invalidateTransactionCaches(c.UserContext(), userData.ID)
-	go h.cache.Delete(c.UserContext(), cache.WalletByID(req.FromWalletID), cache.WalletByID(req.ToWalletID))
+	h.invalidateTransactionCaches(c.UserContext(), userData.ID)
+	_ = h.cache.Delete(c.UserContext(), cache.WalletByID(req.FromWalletID), cache.WalletByID(req.ToWalletID))
 
 	return c.Status(fiber.StatusCreated).JSON(dto.APIResponse{
 		Status:     true,
@@ -339,6 +344,142 @@ func (h *transactionHandler) CreateFundTransfer(c *fiber.Ctx) error {
 		Message:    "Fund transfer created successfully",
 		Data:       result,
 	})
+}
+
+// UpdateFundTransfer — PUT /transactions/transfer/:transferId
+//
+// Replaces a whole transfer (both legs, both balances) in one step. The
+// transaction service checks that every wallet involved is the caller's.
+func (h *transactionHandler) UpdateFundTransfer(c *fiber.Ctx) error {
+	transferID := c.Params("transferId")
+	userData := c.Locals("user_data").(dto.UserData)
+	requestID, _ := c.Locals(data.REQUEST_ID_LOCAL_KEY).(string)
+
+	var req dto.UpdateFundTransferRequest
+	if err := c.BodyParser(&req); err != nil {
+		return c.Status(fiber.StatusBadRequest).JSON(dto.APIResponse{
+			Status:     false,
+			StatusCode: 400,
+			Message:    data.ErrInvalidRequestBody,
+		})
+	}
+
+	if transferID == "" || req.FromWalletID == "" || req.ToWalletID == "" || req.TransactionDate == "" {
+		return c.Status(fiber.StatusBadRequest).JSON(dto.APIResponse{
+			Status:     false,
+			StatusCode: 400,
+			Message:    "transfer id, from_wallet_id, to_wallet_id, and transaction_date are required",
+		})
+	}
+
+	ctx := interceptor.ContextWithUserData(c.UserContext(), userData)
+
+	result, err := h.transaction.UpdateFundTransfer(ctx, &tpb.UpdateFundTransferRequest{
+		TransferId:      transferID,
+		FromWalletId:    req.FromWalletID,
+		ToWalletId:      req.ToWalletID,
+		Amount:          req.Amount,
+		AdminFee:        req.AdminFee,
+		TransactionDate: req.TransactionDate,
+		Description:     req.Description,
+	})
+	if err != nil {
+		logger.Error(data.LogUpdateFundTransferFailed, map[string]any{
+			"service":     data.TransactionService,
+			"request_id":  requestID,
+			"user_id":     userData.ID,
+			"transfer_id": transferID,
+			"error":       err.Error(),
+		})
+		grpcErr := utils.MapGRPCError(err)
+		return c.Status(grpcErr.HTTPStatus).JSON(dto.APIResponse{
+			Status:     false,
+			StatusCode: grpcErr.HTTPStatus,
+			Message:    grpcErr.Message,
+		})
+	}
+
+	h.invalidateTransactionCaches(c.UserContext(), userData.ID)
+	_ = h.cache.Delete(c.UserContext(),
+		cache.TransactionByID(result.GetCashOutTransactionId()),
+		cache.TransactionByID(result.GetCashInTransactionId()),
+	)
+
+	return c.JSON(dto.APIResponse{
+		Status:     true,
+		StatusCode: 200,
+		Message:    "Fund transfer updated successfully",
+		Data:       result,
+	})
+}
+
+// DeleteFundTransfer — DELETE /transactions/transfer/:transferId
+func (h *transactionHandler) DeleteFundTransfer(c *fiber.Ctx) error {
+	transferID := c.Params("transferId")
+	userData := c.Locals("user_data").(dto.UserData)
+	requestID, _ := c.Locals(data.REQUEST_ID_LOCAL_KEY).(string)
+
+	ctx := interceptor.ContextWithUserData(c.UserContext(), userData)
+
+	result, err := h.transaction.DeleteFundTransfer(ctx, transferID)
+	if err != nil {
+		logger.Error(data.LogDeleteFundTransferFailed, map[string]any{
+			"service":     data.TransactionService,
+			"request_id":  requestID,
+			"user_id":     userData.ID,
+			"transfer_id": transferID,
+			"error":       err.Error(),
+		})
+		grpcErr := utils.MapGRPCError(err)
+		return c.Status(grpcErr.HTTPStatus).JSON(dto.APIResponse{
+			Status:     false,
+			StatusCode: grpcErr.HTTPStatus,
+			Message:    grpcErr.Message,
+		})
+	}
+
+	h.invalidateTransactionCaches(c.UserContext(), userData.ID)
+	_ = h.cache.Delete(c.UserContext(),
+		cache.TransactionByID(result.GetCashOutTransactionId()),
+		cache.TransactionByID(result.GetCashInTransactionId()),
+	)
+
+	return c.JSON(dto.APIResponse{
+		Status:     true,
+		StatusCode: 200,
+		Message:    "Fund transfer deleted successfully",
+		Data:       result,
+	})
+}
+
+// requireOwnWallets answers 403 unless every wallet belongs to the caller.
+// The second result is false when the response has already been written.
+func (h *transactionHandler) requireOwnWallets(c *fiber.Ctx, ctx context.Context, userID, requestID string, walletIDs ...string) (error, bool) {
+	for _, walletID := range walletIDs {
+		wallet, err := h.wallet.GetWalletByID(ctx, walletID)
+		if err != nil {
+			logger.Error(data.LogGetWalletByIDFailed, map[string]any{
+				"service":    data.WalletService,
+				"request_id": requestID,
+				"wallet_id":  walletID,
+				"error":      err.Error(),
+			})
+			grpcErr := utils.MapGRPCError(err)
+			return c.Status(grpcErr.HTTPStatus).JSON(dto.APIResponse{
+				Status:     false,
+				StatusCode: grpcErr.HTTPStatus,
+				Message:    grpcErr.Message,
+			}), false
+		}
+		if wallet.GetUserId() != userID {
+			return c.Status(fiber.StatusForbidden).JSON(dto.APIResponse{
+				Status:     false,
+				StatusCode: 403,
+				Message:    "You do not have access to this wallet",
+			}), false
+		}
+	}
+	return nil, true
 }
 
 // UpdateTransaction — PUT /transactions/:id
@@ -402,8 +543,8 @@ func (h *transactionHandler) UpdateTransaction(c *fiber.Ctx) error {
 	}
 
 	// Invalidate transaction, wallet, and dashboard caches
-	go h.invalidateTransactionCaches(c.UserContext(), userData.ID)
-	go h.cache.Delete(c.UserContext(), cache.TransactionByID(transactionID))
+	h.invalidateTransactionCaches(c.UserContext(), userData.ID)
+	_ = h.cache.Delete(c.UserContext(), cache.TransactionByID(transactionID))
 
 	return c.JSON(dto.APIResponse{
 		Status:     true,
@@ -446,8 +587,8 @@ func (h *transactionHandler) DeleteTransaction(c *fiber.Ctx) error {
 	}
 
 	// Invalidate transaction, wallet, and dashboard caches
-	go h.invalidateTransactionCaches(c.UserContext(), userData.ID)
-	go h.cache.Delete(c.UserContext(), cache.TransactionByID(transactionID))
+	h.invalidateTransactionCaches(c.UserContext(), userData.ID)
+	_ = h.cache.Delete(c.UserContext(), cache.TransactionByID(transactionID))
 
 	return c.JSON(dto.APIResponse{
 		Status:     true,
@@ -650,6 +791,8 @@ func (h *transactionHandler) invalidateTransactionCaches(ctx context.Context, us
 		cache.TransactionListPattern(userID),
 		cache.WalletAllPattern(userID),
 		cache.DashboardAllPattern(userID),
+		// Budgets show what was spent this month, so any change to a transaction moves them.
+		cache.BudgetAllPattern(userID),
 	}
 	for _, p := range patterns {
 		if err := h.cache.DeleteByPattern(ctx, p); err != nil {
